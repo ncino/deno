@@ -1,9 +1,8 @@
-
 use anyhow::anyhow;
 use deno_console::deno_console;
 use deno_core::{
   error::JsError,
-  v8::{undefined, Function, Global, Local, Promise, PromiseState, Value},
+  v8::{undefined, Function, Global, Local, Promise, PromiseState, Value, Data},
   FsModuleLoader, JsRuntime, ModuleSpecifier, RuntimeOptions,
 };
 use std::{future::poll_fn, path::Path, rc::Rc, task::Context, task::Poll};
@@ -15,7 +14,7 @@ pub struct SandboxWorker {
 
 pub struct SandboxWorkerCreateOptions {
   pub path: String,
-  pub request: Value
+  pub request: Value,
 }
 
 impl SandboxWorker {
@@ -75,7 +74,7 @@ impl SandboxWorker {
   /// Runs the sandbox until completion. Returns the response from the handler function, usually a Response object.
   pub async fn run(
     &mut self,
-    request_obj: Local<'_, deno_core::v8::Value>,
+    request_obj: deno_core::v8::Value,
   ) -> anyhow::Result<Global<Value>> {
     let module_ns = self.js_runtime.get_module_namespace(self.root_mod_id)?;
     let result = module_ns.open(self.js_runtime.v8_isolate());
@@ -83,6 +82,7 @@ impl SandboxWorker {
     let handler = {
       let mut scope = self.js_runtime.handle_scope();
       let scope = &mut scope;
+
       let default_key = deno_core::v8::String::new(scope, "default")
         .expect("could not create string \"default\"")
         .into();
@@ -108,8 +108,12 @@ impl SandboxWorker {
       let func = handler.open(scope);
       let this = undefined(scope).into();
 
+      let request: Local<Value> = From::from(request_obj
+        .to_object(scope)
+        .ok_or_else(|| anyhow!("could not turn request object into local"))?);
+
       let maybe_response =
-        func.call(scope, this, &[request_obj]).ok_or_else(|| {
+        func.call(scope, this, &[request]).ok_or_else(|| {
           anyhow!("handler function must return a response value")
         })?;
 

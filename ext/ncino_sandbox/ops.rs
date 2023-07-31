@@ -36,11 +36,17 @@ fn op_run_edge_function(
 ) -> serde_v8::Global {
   println!("got to rust!");
   let pool: &SandboxWorkerPool = state.borrow();
-  let promise = pool.create_new_worker(SandboxWorkerCreateOptions {
+
+  let resolver =
+    PromiseResolver::new(scope).expect("could not create promise resolver");
+  let promise: Local<'_, v8::Value> =
+    unsafe { Local::cast::<v8::Value>(resolver.get_promise(scope).into()) };
+
+  pool.create_new_worker(SandboxWorkerCreateOptions {
     path,
-    request: *request_obj.v8_value
+    request: *request_obj.v8_value,
   });
 
-  promise
+  let promise = v8::Global::new(scope, promise);
+  promise.into()
 }
-
