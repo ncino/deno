@@ -1407,6 +1407,7 @@ dependencies = [
  "hyper 0.14.26",
  "libc",
  "log",
+ "ncino_sandbox",
  "netif",
  "nix",
  "notify",
@@ -3158,6 +3159,17 @@ dependencies = [
  "serde",
  "serde_json",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "ncino_sandbox"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "deno_console",
+ "deno_core",
+ "serde",
+ "tokio",
 ]
 
 [[package]]

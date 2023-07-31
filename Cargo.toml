@@ -28,6 +28,7 @@ members = [
   "ext/websocket",
   "ext/webstorage",
   "ext/napi",
+  "ext/ncino_sandbox"
 ]
 exclude = ["test_util/std/hash/_wasm"]
 
@@ -74,6 +75,7 @@ deno_webidl = { version = "0.113.0", path = "./ext/webidl" }
 deno_websocket = { version = "0.118.0", path = "./ext/websocket" }
 deno_webstorage = { version = "0.108.0", path = "./ext/webstorage" }
 deno_napi = { version = "0.43.0", path = "./ext/napi" }
+ncino_sandbox = { version = "0.1.0", path = "./ext/ncino_sandbox" }
 
 aes = "=0.8.2"
 anyhow = "1.0.57"

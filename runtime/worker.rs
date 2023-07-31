@@ -282,6 +282,7 @@ impl MainWorker {
         options.npm_resolver,
         options.fs,
       ),
+      ncino_sandbox::ops::hypervisor::init_ops(),
       // Ops from this crate
       ops::runtime::deno_runtime::init_ops(main_module.clone()),
       ops::worker_host::deno_worker_host::init_ops(

@@ -1,0 +1,19 @@
+[package]
+name = "ncino_sandbox"
+version = "0.1.0"
+edition.workspace = true
+authors = ["nCino Inc."]
+license = "UNLICENSED"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+deno_core.workspace = true
+serde.workspace = true
+tokio.workspace = true
+deno_console.workspace = true
+anyhow.workspace = true
+
+[lib]
+name = "ncino_sandbox"
+path = "lib.rs"

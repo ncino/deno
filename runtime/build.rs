@@ -249,7 +249,8 @@ mod startup_snapshot {
       deno_napi,
       deno_http,
       deno_io,
-      deno_fs
+      deno_fs,
+      hypervisor
     ],
     esm = [
       dir "js",
@@ -336,6 +337,7 @@ mod startup_snapshot {
       deno_http::deno_http::init_ops_and_esm::<DefaultHttpPropertyExtractor>(),
       deno_io::deno_io::init_ops_and_esm(Default::default()),
       deno_fs::deno_fs::init_ops_and_esm::<Permissions>(false, fs.clone()),
+      ncino_sandbox::ops::hypervisor::init_ops_and_esm(),
       runtime::init_ops_and_esm(),
       // FIXME(bartlomieju): these extensions are specified last, because they
       // depend on `runtime`, even though it should be other way around
