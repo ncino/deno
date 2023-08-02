@@ -1,23 +1,35 @@
 use anyhow::anyhow;
 use deno_console::deno_console;
+use ::deno_web::{BlobStore, TimersPermission};
+use deno_webidl::deno_webidl;
+use deno_url::deno_url;
+use deno_web::deno_web;
+
 use deno_core::{
   error::JsError,
-  v8::{undefined, Function, Global, Local, Promise, PromiseState, Value, Data},
+  v8::{undefined, Function, Global, Local, Promise, PromiseState, Value, Data, FunctionCallback},
   FsModuleLoader, JsRuntime, ModuleSpecifier, RuntimeOptions,
 };
-use std::{future::poll_fn, path::Path, rc::Rc, task::Context, task::Poll};
+use std::{future::poll_fn, path::Path, rc::Rc, task::Context, task::Poll, sync::Arc};
 
-pub struct SandboxWorker {
+struct Permissions {}
+
+impl TimersPermission for Permissions {
+    fn allow_hrtime(&mut self) -> bool {
+        true
+    }
+
+    fn check_unstable(&self, state: &deno_core::OpState, api_name: &'static str) {
+      return;
+    }
+}
+
+pub struct SandboxRuntime {
   pub js_runtime: JsRuntime,
   root_mod_id: usize,
 }
 
-pub struct SandboxWorkerCreateOptions {
-  pub path: String,
-  pub request: Value,
-}
-
-impl SandboxWorker {
+impl SandboxRuntime {
   pub fn new() -> Self {
     let js_runtime = JsRuntime::new(RuntimeOptions {
       // module_loader: (),
@@ -26,7 +38,10 @@ impl SandboxWorker {
       is_main: true,
       module_loader: Some(Rc::new(FsModuleLoader {})), // TODO: create a module loader
       extensions: vec![
+        deno_webidl::init_ops_and_esm(),
         deno_console::init_ops_and_esm(),
+        deno_url::init_ops_and_esm(),
+        deno_web::init_ops_and_esm::<Permissions>(Default::default(), None),
         crate::ops::runtime::init_ops_and_esm(),
       ],
       ..Default::default()
@@ -118,9 +133,11 @@ impl SandboxWorker {
         })?;
 
       let maybe_response =
-        Global::new(scope, unsafe { Local::cast(maybe_response) });
+        Global::new(scope,  maybe_response);
       maybe_response
     };
+
+    self.js_runtime.run_event_loop(false).await?;
 
     let response = self.await_response(&response).await?;
     {
@@ -179,5 +196,9 @@ impl SandboxWorker {
       let value_handle = Global::new(&mut scope, local);
       Poll::Ready(Ok(value_handle))
     }
+  }
+
+  pub async fn call_edge_function(&self) {
+
   }
 }

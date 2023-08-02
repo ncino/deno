@@ -11,9 +11,14 @@ license = "UNLICENSED"
 deno_core.workspace = true
 serde.workspace = true
 tokio.workspace = true
+futures.workspace = true
 deno_console.workspace = true
+deno_web.workspace = true
+deno_webidl.workspace = true
+deno_url.workspace = true
 anyhow.workspace = true
 async-channel = "1.9.0"
+cassette = "0.2.3"
 
 [lib]
 name = "ncino_sandbox"

@@ -30,6 +30,7 @@ use deno_core::RuntimeOptions;
 use deno_core::SharedArrayBufferStore;
 use deno_core::Snapshot;
 use deno_core::SourceMapGetter;
+use deno_core::v8::OwnedIsolate;
 use deno_fs::FileSystem;
 use deno_http::DefaultHttpPropertyExtractor;
 use deno_io::Stdio;
@@ -302,7 +303,7 @@ impl MainWorker {
         permissions,
         unstable,
         enable_testing_features,
-      ),
+      )
     ];
 
     extensions.extend(std::mem::take(&mut options.extensions));
@@ -334,6 +335,13 @@ impl MainWorker {
       is_main: true,
       ..Default::default()
     });
+
+    // Send the owned isolate to ops for usage
+    {
+      let mut state = js_runtime.op_state();
+      let mut state = state.as_ref().borrow_mut();
+      state.put(js_runtime.v8_isolate() as *mut v8::OwnedIsolate);
+    }
 
     if let Some(server) = options.maybe_inspector_server.clone() {
       server.register_inspector(

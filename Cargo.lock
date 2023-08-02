@@ -498,6 +498,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bf2a5fb3207c12b5d208ebc145f967fea5cac41a021c37417ccc31ba40f39ee"
 
 [[package]]
+name = "cassette"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbd8c26731af5780bdbf9b6e7823246b3d462bcaa927802262b338e89115c362"
+
+[[package]]
 name = "cbc"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3193,8 +3199,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
+ "cassette",
  "deno_console",
  "deno_core",
+ "deno_url",
+ "deno_web",
+ "deno_webidl",
+ "futures",
  "serde",
  "tokio",
 ]
