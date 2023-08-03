@@ -46,8 +46,6 @@ fn op_start_edge_function<'scope>(
   #[string] request_model: String,
   #[buffer(copy)] body_array_buf: Vec<u8>,
 ) -> anyhow::Result<v8::Local<'scope, v8::Promise>> {
-  println!("starting to run edge function");
-
   let resolver = v8::PromiseResolver::new(scope).unwrap();
   let promise = resolver.get_promise(scope);
   let global_resolver = v8::Global::new(scope, resolver);
@@ -72,15 +70,12 @@ pub fn op_drain_worker_queue(
   scope: &mut v8::HandleScope,
   state: Rc<RefCell<OpState>>,
 ) -> anyhow::Result<()> {
-  println!("draining queue");
   let state = state.as_ref().try_borrow_mut()?;
   let pool = state.borrow::<RefCell<SandboxOrchestrator>>();
   let mut pool = pool.try_borrow_mut()?;
   let finished_workers = pool.drain();
 
   for worker in finished_workers {
-    println!("Draining worker {}", worker.id);
-
       let response = worker.response.ok_or_else(|| {
         anyhow!(
           "called drain on a worker before it had responded without any errors"
@@ -88,9 +83,16 @@ pub fn op_drain_worker_queue(
       })??;
     let resolver = worker.resolver.open(scope);
 
-    println!("Attempting to resolve promise...");
-    let value = v8::String::new(scope, "not implemented").unwrap().into();
-    resolver.resolve(scope, value);
+    let value = v8::Object::new(scope);
+    let response_json_key = v8::String::new_external_onebyte_static(scope, b"json").unwrap();
+    let response_json = v8::String::new(scope, response.0.as_str()).ok_or_else(|| anyhow!("could not create new object for response"))?;
+    value.set(scope, response_json_key.into(), response_json.into());
+    let response_body_key = v8::String::new_external_onebyte_static(scope, b"body").unwrap();
+    let store = v8::ArrayBuffer::new_backing_store_from_vec(response.1);
+    let response_body = v8::ArrayBuffer::with_backing_store(scope, &store.make_shared());
+    value.set(scope, response_body_key.into(), response_body.into());
+
+    resolver.resolve(scope, value.into());
     // SAFETY: This is populated as long as the response is populated
     let dispose = unsafe { worker.should_dispose.assume_init() };
     dispose.send(()).map_err(|_| {
@@ -98,12 +100,7 @@ pub fn op_drain_worker_queue(
         "could not send dispoal command\nan isolate could not be cleaned up"
       )
     })?;
-
-
-    println!("finished draining worker {}", worker.id);
   }
-
-  println!("finished draining queue");
 
   Ok(())
 }

@@ -56,8 +56,7 @@ pub struct Worker {
   pub request: (String, Vec<u8>),
 
   /// SAFETY: response is valid until `should_dispose` is sent.
-  // pub response: Option<anyhow::Result<(String, Vec<u8>)>>,
-  pub response: Option<anyhow::Result<v8::Global<v8::Value>>>,
+  pub response: Option<anyhow::Result<(String, Vec<u8>)>>,
   /// SAFETY: This will always be populated as long as the worker was received using pool.drain().
   /// In other words, you should initialize this value when you attach a Response
   pub should_dispose: MaybeUninit<oneshot::Sender<()>>
@@ -169,11 +168,11 @@ impl SandboxOrchestrator {
               futs.push(async move {
                 let platform = v8::V8::get_current_platform();
                 let mut runtime = SandboxRuntime::new(platform);
-                runtime.bootstrap(Path::new(worker.path.as_str())).await.unwrap();
+                runtime.bootstrap(Path::new(worker.path.as_str())).await?;
 
                 // FIXME: Do this without cloning the body buffer
                 let req_clone = worker.request.clone();
-                let response = runtime.run(worker.request).await.unwrap();
+                let response = runtime.run(worker.request).await?;
 
                 worker.response = Some(Ok(response));
 
@@ -182,17 +181,22 @@ impl SandboxOrchestrator {
 
                 worker.request = req_clone;
 
-                sender.send(worker).map_err(|_| anyhow!("could not send worker to thread")).unwrap();
+                sender.send(worker).map_err(|_| anyhow!("could not send worker to thread"))?;
 
                 // Race condition: Isolate may die before the other thread can respond to the http request.
                 // This ensures that the isolate stays alive until the other thread can respond.
                 wait_for_dispose.await.unwrap();
+                return Ok(()) as anyhow::Result<()>;
               });
 
               // TODO: Find a way to push a microtask onto the other isolate.
             },
-            Some(_) = futs.next() => {
+            Some(result) = futs.next() => {
               println!("finished a worker");
+              match result {
+                  Ok(()) => {},
+                  Err(e) => eprintln!("Encountered an error while running worker: {}", e)
+              }
             },
             else => {
               tokio::time::sleep(Duration::from_millis(10)).await;

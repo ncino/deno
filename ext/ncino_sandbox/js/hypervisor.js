@@ -3,6 +3,11 @@ import { setTimeout, clearTimeout } from "ext:deno_web/02_timers.js";
 const Deno = globalThis.Deno;
 const core = Deno.core;
 const ops = core.ops;
+const primordials = globalThis.__bootstrap.primordials;
+const {
+  ObjectFreeze,
+  ObjectSetPrototypeOf,
+} = primordials;
 
 /**
  * Run an edge function with tenancy defined.
@@ -20,12 +25,19 @@ export async function runEdgeFunction(file, requestModel, bodyArrayBuf) {
   const timeout = setTimeout(() => reject("edge function timed out"), 10 * 1000);
 
   const res = await Promise.race([edgeFunctionPromise, timeoutPromise]);
+  console.debug(res);
+
+  const { json, body } = res;
+  const responseJson = JSON.parse(json);
+  ObjectSetPrototypeOf(responseJson, ResponseModel.prototype);
+  const realResponse = responseJson.toResponse(body);
+  ObjectFreeze(realResponse);
 
   if (timeout) {
     clearTimeout(timeout);
   }
 
-  return res;
+  return realResponse;
 }
 
 core.setMacrotaskCallback(handleWorkers);
