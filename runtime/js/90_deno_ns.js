@@ -24,6 +24,10 @@ import * as tty from "ext:runtime/40_tty.js";
 import * as httpRuntime from "ext:runtime/40_http.js";
 import * as kv from "ext:deno_kv/01_db.ts";
 import { runEdgeFunction } from "ext:hypervisor/hypervisor.js";
+import { RequestModel, ResponseModel } from 'ext:hypervisor/01_models.js';
+
+globalThis.RequestModel = RequestModel;
+globalThis.ResponseModel = ResponseModel;
 
 const denoNs = {
   runEdgeFunction,

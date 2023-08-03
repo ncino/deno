@@ -336,13 +336,6 @@ impl MainWorker {
       ..Default::default()
     });
 
-    // Send the owned isolate to ops for usage
-    {
-      let mut state = js_runtime.op_state();
-      let mut state = state.as_ref().borrow_mut();
-      state.put(js_runtime.v8_isolate() as *mut v8::OwnedIsolate);
-    }
-
     if let Some(server) = options.maybe_inspector_server.clone() {
       server.register_inspector(
         main_module.to_string(),

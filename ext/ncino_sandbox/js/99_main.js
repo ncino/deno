@@ -1,5 +1,5 @@
-
-import 'ext:runtime/console.js'
+import { RequestModel, ResponseModel } from 'ext:runtime/01_models.js'
+import 'ext:runtime/02_console.js'
 import 'ext:deno_webidl/00_webidl.js'
 import 'ext:deno_url/00_url.js'
 import 'ext:deno_url/01_urlpattern.js'
@@ -20,3 +20,16 @@ import 'ext:deno_web/12_location.js'
 import 'ext:deno_web/13_message_port.js'
 import 'ext:deno_web/14_compression.js'
 import 'ext:deno_web/15_performance.js'
+import 'ext:deno_fetch/20_headers.js';
+import 'ext:deno_fetch/21_formdata.js';
+import 'ext:deno_fetch/22_body.js';
+import 'ext:deno_fetch/22_http_client.js';
+import 'ext:deno_fetch/23_request.js';
+import { Response } from 'ext:deno_fetch/23_response.js';
+import { Request } from 'ext:deno_fetch/23_request.js';
+import 'ext:deno_fetch/26_fetch.js';
+
+globalThis.Response = Response;
+globalThis.Request = Request;
+globalThis.RequestModel = RequestModel;
+globalThis.ResponseModel = ResponseModel;

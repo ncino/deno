@@ -1,20 +1,11 @@
 use anyhow::anyhow;
-use deno_core::futures::TryFutureExt;
 use deno_core::op2;
 use deno_core::url::Url;
-use deno_core::v8::CallbackScope;
-use deno_core::v8::Function;
-use deno_core::v8::HandleScope;
-use deno_core::v8::Isolate;
-use deno_core::v8::IsolateHandle;
-use deno_core::v8::OwnedIsolate;
-use deno_core::v8::PromiseResolver;
-use deno_core::v8::Value;
-use deno_core::ModuleSpecifier;
-use deno_core::PromiseId;
-use std::borrow::BorrowMut;
-use std::cell::Ref;
+use deno_core::v8::Global;
+
 use std::cell::RefCell;
+use std::os::macos::raw;
+use std::ptr::NonNull;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -26,20 +17,24 @@ use deno_core::OpState;
 use deno_core::Resource;
 use deno_core::ResourceId;
 
-use crate::pool::SandboxWorkerCreateOptions;
 use crate::pool::SandboxOrchestrator;
+use crate::pool::SandboxWorkerCreateOptions;
 use crate::pool::SandboxWorkerId;
 use crate::pool::Worker;
 
 // Ops and scripts to enable the execution of the sandbox from Deno
-deno_core::extension!(hypervisor, ops = [op_start_edge_function, op_drain_worker_queue], esm = [dir "js", "hypervisor.js"], state = |state| {
-  state.put(RefCell::new(SandboxOrchestrator::new(1)));
-});
+deno_core::extension!(hypervisor, ops = [op_start_edge_function, op_drain_worker_queue],
+  esm_entry_point = "ext:hypervisor/hypervisor.js",
+  esm = [dir "js", "hypervisor.js", "01_models.js"],
+  state = |state| {
+    state.put(RefCell::new(SandboxOrchestrator::new(1)));
+  }
+);
 
 // The runtime that executes in an edge-function sandbox.
 deno_core::extension!(runtime,
   esm_entry_point = "ext:runtime/99_main.js",
-  esm = [dir "js", "console.js", "99_main.js"]
+  esm = [dir "js", "01_models.js", "02_console.js", "99_main.js"]
 );
 
 #[op2]
@@ -48,7 +43,8 @@ fn op_start_edge_function<'scope>(
   state: Rc<RefCell<OpState>>,
   #[string] path: String,
   // Must be an instance of Request
-  request_obj: v8::Local<'scope, v8::Value>,
+  #[string] request_model: String,
+  #[buffer(copy)] body_array_buf: Vec<u8>,
 ) -> anyhow::Result<v8::Local<'scope, v8::Promise>> {
   println!("starting to run edge function");
 
@@ -62,11 +58,11 @@ fn op_start_edge_function<'scope>(
 
   pool.create_new_worker(SandboxWorkerCreateOptions {
     main_module: Url::from_file_path(path.as_str()).unwrap(),
-    request: *request_obj,
-    resolver: global_resolver
+    request_json: request_model,
+    request_body: body_array_buf,
+    resolver: global_resolver,
+    path,
   });
-
-  // let value = recv.await?;
 
   Ok(promise)
 }
@@ -77,16 +73,37 @@ pub fn op_drain_worker_queue(
   state: Rc<RefCell<OpState>>,
 ) -> anyhow::Result<()> {
   println!("draining queue");
-  let state = state.as_ref().borrow_mut();
+  let state = state.as_ref().try_borrow_mut()?;
   let pool = state.borrow::<RefCell<SandboxOrchestrator>>();
-  let mut pool = pool.borrow_mut();
+  let mut pool = pool.try_borrow_mut()?;
   let finished_workers = pool.drain();
 
   for worker in finished_workers {
-    let response = worker.response.unwrap().unwrap().to_object(scope).unwrap();
+    println!("Draining worker {}", worker.id);
+
+      let response = worker.response.ok_or_else(|| {
+        anyhow!(
+          "called drain on a worker before it had responded without any errors"
+        )
+      })??;
     let resolver = worker.resolver.open(scope);
-    resolver.resolve(scope, response.into());
+
+    println!("Attempting to resolve promise...");
+    let value = v8::String::new(scope, "not implemented").unwrap().into();
+    resolver.resolve(scope, value);
+    // SAFETY: This is populated as long as the response is populated
+    let dispose = unsafe { worker.should_dispose.assume_init() };
+    dispose.send(()).map_err(|_| {
+      anyhow!(
+        "could not send dispoal command\nan isolate could not be cleaned up"
+      )
+    })?;
+
+
+    println!("finished draining worker {}", worker.id);
   }
+
+  println!("finished draining queue");
 
   Ok(())
 }

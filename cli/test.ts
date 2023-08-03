@@ -1,8 +1,11 @@
-import { delay } from 'https://deno.land/x/delay@v0.2.0/mod.ts';
+const r = new Request("https://localhost");
 
-let promise = await Deno.runEdgeFunction(
+
+const req = new Request("https://localhost");
+let res = await Deno.runEdgeFunction(
   "/Users/tristanzander/Repos/hypervisor/hypervisor/test-data/hello-world.ts",
-  new Request("https://localhost")
+  new RequestModel(req),
+  req.arrayBuffer()
 );
 
-console.debug(promise)
+console.debug("Finished", res);

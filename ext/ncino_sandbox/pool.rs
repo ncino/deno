@@ -1,32 +1,40 @@
-use std::task::Context;
+use ::futures::{
+  stream::futures_unordered,
+  task::{waker_ref, ArcWake},
+  FutureExt,
+};
 use anyhow::anyhow;
 use cassette::Cassette;
 use deno_url::op_url_get_serialization;
-use ::futures::{task::{waker_ref, ArcWake}, FutureExt, stream::futures_unordered};
 use std::{
   borrow::BorrowMut,
   cell::{RefCell, UnsafeCell},
   ffi::c_void,
   sync::{atomic::AtomicU64, Arc},
   thread::JoinHandle,
-  time::Duration,
+  time::Duration, path::Path, mem::MaybeUninit,
 };
+use std::{ptr::NonNull, task::Context};
+use deno_core::serde_v8;
 
 use async_channel::Receiver;
 use deno_core::{
   futures::{
-    future::BoxFuture, stream::FuturesUnordered, task::{AtomicWaker, WakerRef}, StreamExt,
+    future::BoxFuture,
+    stream::FuturesUnordered,
+    task::{AtomicWaker, WakerRef},
+    StreamExt,
   },
   v8::{self, IsolateHandle},
   v8::{
     CallbackScope, Function, Global, Handle, HandleScope, OwnedIsolate,
     PromiseResolver, Value,
   },
-  BufView, ModuleSpecifier, Resource,
+  BufView, ModuleSpecifier, Resource, CreateRealmOptions,
 };
 use tokio::{
   runtime::Runtime,
-  sync::{oneshot, Mutex, RwLock, futures},
+  sync::{futures, oneshot, Mutex, RwLock},
 };
 
 use crate::worker::SandboxRuntime;
@@ -35,16 +43,24 @@ pub type SandboxWorkerId = u64;
 
 pub struct SandboxWorkerCreateOptions {
   pub main_module: ModuleSpecifier,
-  pub request: v8::Value,
+  pub request_json: String,
+  pub request_body: Vec<u8>,
   pub resolver: v8::Global<v8::PromiseResolver>,
+  pub path: String
 }
 
-#[derive(Debug)]
 pub struct Worker {
+  pub path: String,
   pub resolver: Global<PromiseResolver>,
   pub id: SandboxWorkerId,
-  pub request: v8::Value,
-  pub response: Option<anyhow::Result<v8::Value>>,
+  pub request: (String, Vec<u8>),
+
+  /// SAFETY: response is valid until `should_dispose` is sent.
+  // pub response: Option<anyhow::Result<(String, Vec<u8>)>>,
+  pub response: Option<anyhow::Result<v8::Global<v8::Value>>>,
+  /// SAFETY: This will always be populated as long as the worker was received using pool.drain().
+  /// In other words, you should initialize this value when you attach a Response
+  pub should_dispose: MaybeUninit<oneshot::Sender<()>>
 }
 
 // SAFETY: The global resolver will always last longer than the parent isolate.
@@ -102,17 +118,19 @@ impl SandboxOrchestrator {
       .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     let worker = Worker {
-        resolver: options.resolver,
-        id: worker_id,
-        request: options.request,
-        response: None,
+      resolver: options.resolver,
+      id: worker_id,
+      request: (options.request_json, options.request_body),
+      response: None,
+      path: options.path,
+      should_dispose: MaybeUninit::uninit(),
     };
 
     self.sender.send_blocking((worker, send)).unwrap();
 
-    self.futures.push(Box::pin(async move {
-      recv.await.unwrap()
-    }));
+    self
+      .futures
+      .push(Box::pin(async move { recv.await.unwrap() }));
   }
 
   /// If any workers have finished gather them.
@@ -139,25 +157,42 @@ impl SandboxOrchestrator {
   async fn init_thread(mut recv: Receiver<(Worker, oneshot::Sender<Worker>)>) {
     let local = tokio::task::LocalSet::new();
 
-    // The main JavaScript runtime that all edge functions will be called under.
-    let mut runtime = SandboxRuntime::new();
 
     local
       .run_until(async {
+        let mut futs = FuturesUnordered::new();
         loop {
           tokio::select! {
             Some((mut worker, sender)) = recv.next() => {
               println!("Received new worker: {}", worker.id);
-              // TODO: put this is a FuturesUnordered so this can handle multiple isolates at once.
-              // let result = worker.call_edge_function().await;
-              // TODO: Remove this logic and implement
-              tokio::time::sleep(Duration::from_secs(1)).await;
 
-              worker.response = Some(Ok(worker.request.clone()));
+              futs.push(async move {
+                let platform = v8::V8::get_current_platform();
+                let mut runtime = SandboxRuntime::new(platform);
+                runtime.bootstrap(Path::new(worker.path.as_str())).await.unwrap();
 
-              sender.send(worker).expect("could not send worker");
+                // FIXME: Do this without cloning the body buffer
+                let req_clone = worker.request.clone();
+                let response = runtime.run(worker.request).await.unwrap();
 
-              // resolver.resolve(&mut scope, ret);
+                worker.response = Some(Ok(response));
+
+                let (dispose, wait_for_dispose) = oneshot::channel();
+                worker.should_dispose = MaybeUninit::new(dispose);
+
+                worker.request = req_clone;
+
+                sender.send(worker).map_err(|_| anyhow!("could not send worker to thread")).unwrap();
+
+                // Race condition: Isolate may die before the other thread can respond to the http request.
+                // This ensures that the isolate stays alive until the other thread can respond.
+                wait_for_dispose.await.unwrap();
+              });
+
+              // TODO: Find a way to push a microtask onto the other isolate.
+            },
+            Some(_) = futs.next() => {
+              println!("finished a worker");
             },
             else => {
               tokio::time::sleep(Duration::from_millis(10)).await;

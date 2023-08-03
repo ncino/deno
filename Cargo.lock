@@ -3202,6 +3202,7 @@ dependencies = [
  "cassette",
  "deno_console",
  "deno_core",
+ "deno_fetch",
  "deno_url",
  "deno_web",
  "deno_webidl",
